@@ -1,0 +1,276 @@
+/*
+ * amba_heapmem.c
+ *
+ * History:
+ *	2012/04/07 - [Keny Huang] created file
+ *
+ * Copyright (C) 2007-2012, Ambarella, Inc.
+ *
+ * All rights reserved. No Part of this file may be reproduced, stored
+ * in a retrieval system, or transmitted, in any form, or by any means,
+ * electronic, mechanical, photocopying, recording, or otherwise,
+ * without the prior consent of Ambarella, Inc.
+ *
+ */
+
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/miscdevice.h>
+#include <linux/platform_device.h>
+#include <linux/mm.h>
+#include <linux/uaccess.h>
+#include <misc/amba_heapmem.h>
+#include <plat/ambalink_cfg.h>
+
+extern int rpmsg_linkctrl_cmd_get_mem_info(u8 type, void **base, void **phys, u32 *size);
+
+static void *heap_baseaddr = NULL;
+static void *heap_physaddr = NULL;
+static unsigned int heap_size = 0;
+
+struct amba_heapmem_dev {
+	struct miscdevice *misc_dev;
+};
+
+static struct amba_heapmem_dev amba_heap_dev = {NULL};
+static DEFINE_MUTEX(amba_heap_mutex);
+
+static long amba_heap_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	long ret = 0;
+	struct AMBA_HEAPMEM_INFO_s minfo;
+
+	//printk("%s\n",__func__);
+
+	mutex_lock(&amba_heap_mutex);
+	switch (cmd) {
+	case AMBA_HEAPMEM_GET_INFO:
+		if(rpmsg_linkctrl_cmd_get_mem_info(0, &heap_baseaddr, &heap_physaddr, &heap_size)<0){
+			printk("rpmsg_linkctrl_cmd_get_mem_info() fail\n");
+			ret = -EINVAL;
+			break;
+		}
+		minfo.base = (unsigned int)heap_baseaddr;
+		minfo.phys = (unsigned int)heap_physaddr;
+		minfo.size = heap_size;
+
+		if(copy_to_user((void **)arg, &minfo, sizeof(struct AMBA_HEAPMEM_INFO_s))){
+			ret = -EFAULT;
+		}
+		break;
+	case AMBA_HEAPMEM_ACCESS_TEST:
+		do {
+			unsigned int test_addr;
+			unsigned int *tptr;
+
+			ret = copy_from_user(&test_addr, (void *)arg, sizeof(unsigned int));
+			if (ret<0){
+				ret = -EFAULT;
+				break;
+			} else {
+				ret = 0;
+			}
+			tptr = (unsigned int *)test_addr;
+			//printk("%s: write %p as 0xfeedda0b\n",__FUNCTION__, tptr);
+			*tptr = 0xfeedda0b;
+		} while(0);
+		break;
+	default:
+		printk("%s: unknown command 0x%08x", __func__, cmd);
+		ret = -EINVAL;
+		break;
+	}
+	mutex_unlock(&amba_heap_mutex);
+
+	return ret;
+}
+
+#define pgprot_noncached(prot) \
+       __pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_UNCACHED)
+
+static pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
+				     unsigned long size, pgprot_t vma_prot)
+{
+	/* Do not need to set as noncached for one CPU! */
+#if !defined(CONFIG_AMBALINK_SINGLE_CORE)
+	if (file->f_flags & O_DSYNC){
+		printk("phys_mem_access_prot: set as noncached\n");
+		return pgprot_noncached(vma_prot);
+	}
+#endif
+
+	return vma_prot;
+}
+
+static int amba_heap_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	int rval;
+	unsigned long size;
+	u32 baseaddr;
+
+	mutex_lock(&amba_heap_mutex);
+	if(rpmsg_linkctrl_cmd_get_mem_info(0, &heap_baseaddr, &heap_physaddr, &heap_size)<0){
+		printk("rpmsg_linkctrl_cmd_get_mem_info() fail\n");
+		rval = -EINVAL;
+		goto Done;
+	}
+
+	size = vma->vm_end - vma->vm_start;
+	if(size==heap_size) {
+		//printk("%s: heap_baseaddr=%p, heap_physaddr=%p, heap_size=%x\n",
+		//	__func__, heap_baseaddr, heap_physaddr, heap_size);
+
+		/* For MMAP, it needs to use physical address directly! */
+		//baseaddr=(int)ambalink_phys_to_virt((u32)heap_physaddr);
+		baseaddr = (u32)heap_physaddr;
+	} else {
+		printk("%s: wrong size(%x)! heap_size=%x\n",__func__, (unsigned int)size, heap_size);
+		rval = -EINVAL;
+		goto Done;
+	}
+
+	//if(filp->f_flags & O_SYNC){
+	//	vma->vm_flags |= VM_IO;
+	//}
+	//vma->vm_flags |= VM_RESERVED;
+
+	vma->vm_page_prot = phys_mem_access_prot(filp, vma->vm_pgoff,
+						 size,
+						 vma->vm_page_prot);
+
+	vma->vm_pgoff = (baseaddr) >> PAGE_SHIFT;
+	if ((rval = remap_pfn_range(vma,
+			vma->vm_start,
+			vma->vm_pgoff,
+			size,
+			vma->vm_page_prot)) < 0) {
+		goto Done;
+	}
+
+	rval = 0;
+
+Done:
+	mutex_unlock(&amba_heap_mutex);
+	return rval;
+}
+
+static int amba_heap_open(struct inode *inode, struct file *filp)
+{
+//printk("%s\n",__func__);
+	return 0;
+}
+
+static int amba_heap_release(struct inode *inode, struct file *filp)
+{
+//printk("%s\n",__func__);
+	return 0;
+}
+
+static struct file_operations amba_heap_fops = {
+	.owner = THIS_MODULE,
+	.unlocked_ioctl = amba_heap_ioctl,
+	.mmap = amba_heap_mmap,
+	.open = amba_heap_open,
+	.release = amba_heap_release,
+};
+
+static struct miscdevice amba_heapmem_device = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "amba_heapmem",
+	.fops = &amba_heap_fops,
+};
+
+struct platform_device amba_heapmem = {
+	.name			= "amba_heapmem",
+	.id			= 0,
+};
+EXPORT_SYMBOL(amba_heapmem);
+
+static int amba_heap_probe(struct platform_device *pdev)
+{
+	int err = 0;
+
+
+	if(amba_heap_dev.misc_dev!=NULL){
+		dev_err(&pdev->dev, "amba_heapmem already exists. Skip operation!\n");
+		return 0;
+	}
+
+	platform_set_drvdata(pdev, &amba_heap_dev);
+
+	amba_heap_dev.misc_dev = &amba_heapmem_device;
+
+	err = misc_register(amba_heap_dev.misc_dev);
+	if (err){
+		dev_err(&pdev->dev, "failed to misc_register amba_heapmem.\n");
+		goto err_fail;
+	}
+
+	printk("Probe %s successfully\n",amba_heap_dev.misc_dev->name);
+
+	return 0;
+
+err_fail:
+	misc_deregister(amba_heap_dev.misc_dev);
+	amba_heap_dev.misc_dev=NULL;
+	return err;
+}
+
+
+static int amba_heap_remove(struct platform_device *pdev)
+{
+	misc_deregister(amba_heap_dev.misc_dev);
+	amba_heap_dev.misc_dev=NULL;
+
+	return 0;
+}
+
+#ifdef CONFIG_PM
+static int amba_heap_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	int errorCode = 0;
+
+	dev_dbg(&pdev->dev, "%s exit with %d @ %d\n",
+		__func__, errorCode, state.event);
+
+	return errorCode;
+}
+
+static int amba_heap_resume(struct platform_device *pdev)
+{
+	int errorCode = 0;
+
+	dev_dbg(&pdev->dev, "%s exit with %d\n", __func__, errorCode);
+
+	return errorCode;
+}
+#endif
+
+static struct platform_driver amba_heapmem_driver = {
+	.probe = amba_heap_probe,
+	.remove = amba_heap_remove,
+#ifdef CONFIG_PM
+	.suspend        = amba_heap_suspend,
+	.resume		= amba_heap_resume,
+#endif
+	.driver = {
+		.name	= "amba_heapmem",
+	},
+};
+
+static int __init __amba_heap_init(void)
+{
+	return platform_driver_register(&amba_heapmem_driver);
+}
+
+static void __exit __amba_heap_exit(void)
+{
+	platform_driver_unregister(&amba_heapmem_driver);
+}
+
+module_init(__amba_heap_init);
+module_exit(__amba_heap_exit);
+
+MODULE_AUTHOR("Keny Huang <skhuang@ambarella.com>");
+MODULE_DESCRIPTION("Ambarella heapmem driver");
+MODULE_LICENSE("GPL");

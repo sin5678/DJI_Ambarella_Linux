@@ -1,0 +1,6 @@
+config RPMSG_TRANSFER
+	tristate "Transfer"
+	depends on RPMSG
+	default m
+	help
+	  Dji use for rpmsg transfer	

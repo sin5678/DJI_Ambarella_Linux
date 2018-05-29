@@ -1,0 +1,128 @@
+/*
+ * Copyright (C) 2013 Ambarella,Inc. - http://www.ambarella.com/
+ * Author: Cao Rongrong <rrcao@ambarella.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+/dts-v1/;
+
+/include/ "ambarella-h1.dtsi"
+
+/ {
+	model = "Ambarella H1EVK Board";
+	compatible = "ambarella,s3";
+
+	chosen {
+                /* For pure linux set uart0. */
+		linux,stdout-path = &uart1;
+	};
+
+	apb@e8000000 {
+		uart0: uart@e8005000 {
+                        /* For pure linux set status to "ok". */
+			status = "disabled";
+		        pinctrl-0 = <&uart0_pins>;
+		        /* amb,tx-fifo-fix; */
+		};
+
+		i2c0: i2c@e8003000 {
+			status = "disabled";
+	        };
+
+		i2c1: i2c@e8001000 {
+			status = "disabled";
+	        };
+
+		i2c2: i2c@e8007000 {
+			status = "disabled";
+	        };
+
+		ir@e8006000 {
+			amb,protocol = <1>;
+			amb,keymap =
+				<0x0100bcbd 116>, /* KEY_POWER */
+				<0x01000405 115>, /* KEY_VOLUMEUP */
+				<0x01008485 114>; /* KEY_VOLUMEDOWN */
+			/* amb,print-key; */
+		};
+
+		rtc@e8015000 {
+			status = "ok";
+		};
+	};
+
+	ahb@e0000000 {
+		uart1: uart@e0032000 {
+			status = "ok";
+        		pinctrl-0 = <&uart1_pins_c &uart1_flow_pins_c>;
+		        amb,msr-used;   /* use Modem Status Register */
+		        /* amb,txdma-used; */
+		        /* amb,rxdma-used; */
+		        /* amb,tx-fifo-fix; */
+		};
+
+		sdmmc0@e0002000 {
+                        /* For pure linux set status to "ok". */
+			status = "disabled";
+			slot@0 {
+				max-frequency = <120000000>;
+				/* pwr-gpios = <&pcf8574a 0 0x1>; */
+				/* v18-gpios = <&gpio 199 0x1>; */
+			};
+		};
+
+		sdmmc1@e000c000 {
+			status = "disabled";
+			slot@0 {
+				max-frequency = <48000000>;
+				/* pwr-gpios = <&pcf8574a 2 0x1>; */
+				bus-width = <4>;
+				no-1-8-v;
+			};
+		};
+
+		sdmmc2@e001f000 {
+			status = "ok";
+			slot@0 {
+				max-frequency = <48000000>;
+				/* pwr-gpios = <&pcf8574a 1 0x1>; */
+				/* v18-gpios = <&gpio 200 0x1>; */
+				bus-width = <4>;
+				no-1-8-v;
+			};
+		};
+
+		mac0: ethernet@e000e000 {
+			amb,support-gmii;
+			phy@3 {
+				reg = <3>;
+				interrupt-parent = <&gpio>;
+				interrupts = <19 0x8>;
+			};
+		};
+
+		spi0: spi@e0020000 {
+			cs-gpios = <&gpio 30 0>, <&gpio 31 0>;
+
+			ambvin0@0 {
+				compatible = "ambarella,ambvin";
+				reg = <0>;
+				spi-max-frequency = <1000000>;
+				spi-cpha;
+				spi-cpol;
+			};
+		};
+	};
+
+	rct@ec170000 {
+		usbphy: usbphy@ec170050 {
+			/* high will trigger the ocp interrupt */
+			amb,ocp-polarity = <0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&usb_host0_pins_a &usb_host1_pins_a>;
+		};
+	};
+};
+

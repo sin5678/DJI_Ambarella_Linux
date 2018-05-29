@@ -1,0 +1,16 @@
+menu "Ambarella Private Test"
+
+config TEST_I2C
+	tristate "Amba I2C Test Program"
+	default n
+	help
+	  Enable test program for I2C.
+	  This test simply read/write I2C registers on Sony IMX377.
+
+config TEST_SPI
+	tristate "Amba SPI Test Program"
+	default n
+	help
+	  Enable test program for SPI	 
+
+endmenu

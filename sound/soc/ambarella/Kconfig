@@ -1,0 +1,77 @@
+config SND_AMBARELLA_SOC
+	tristate "SoC Audio for the Ambarella chips"
+	depends on PLAT_AMBARELLA && SND_SOC
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	  Say Y or M if you want to add support for codecs attached to
+	  the AMBARELLA I2S interface. You will also need
+	  to select the audio interfaces to support below.
+
+config SND_AMBARELLA_SOC_I2S
+	tristate
+
+menuconfig SND_AMBARELLA_BOARD
+	tristate "Ambarella Board Type"
+	depends on SND_AMBARELLA_SOC
+	help
+	  Say Y or M to select specific ambarella board.
+
+if SND_AMBARELLA_BOARD
+
+config AMBEVK_BOARD
+	tristate "EVK Board [With AK4642 Codec]"
+	depends on SND_AMBARELLA_SOC
+	select SND_AMBARELLA_SOC_I2S
+	select SND_SOC_AK4642_AMB
+	help
+	  Say Y if you want to add ak4642 audio codec support for
+	  SoC audio on Ambarella EVK Board (COCONUT, DURIAN or Ginkgo Board).
+
+config I1EVK_BOARD
+	tristate "I1EVK Board [With WM8994 Codec]"
+	depends on SND_AMBARELLA_SOC && MACH_ELEPHANT && MFD_WM8994 && CODEC_AMBARELLA_WM8994
+	select SND_AMBARELLA_SOC_I2S
+	select SND_SOC_WM8994
+	select SND_SOC_AMBARELLA_DUMMY
+	help
+	  Say Y if you want to add wm8994 audio codec support for
+	  SoC audio on Ambarella I1EVK Board.
+
+config S2LMKIWI_BOARD
+	tristate "S2LMKIWI Board [With AK4954/AK4951 Codec] "
+	depends on SND_AMBARELLA_SOC
+	select SND_AMBARELLA_SOC_I2S
+	select SND_SOC_AK4954_AMB
+	select SND_SOC_AK4951_AMB
+	help
+	  Say Y if you want to add ak4954/ak4951 audio codec support for
+	  SoC audio on Ambarella KIWI Board.
+
+config S2LRDB_BOARD
+	tristate "S2LRDB Board [With ES8388 Codec] "
+	depends on SND_AMBARELLA_SOC
+	select SND_AMBARELLA_SOC_I2S
+	select SND_SOC_ES8388
+	help
+	  Say Y if you want to add ES8388 audio codec support for
+	  SoC audio on Ambarella S2L RDB Board.
+
+config STRAWBERRY_BOARD
+	tristate "STRAWBERRY Board [With WM8940 Codec] "
+	depends on SND_AMBARELLA_SOC
+	select SND_AMBARELLA_SOC_I2S
+	select SND_SOC_WM8940_AMB
+	help
+	  Say Y if you want to add wm8940 audio codec support for
+	  SoC audio on Ambarella STRAWBERRY Board.
+
+config AMBARELLA_DUMMY_BOARD
+	tristate "Ambarella Dummy Board [With Dummy Codec]"
+	select SND_AMBARELLA_SOC_I2S
+	select SND_SOC_AMBARELLA_DUMMY
+	help
+	  Say Y if you want to add dummy audio codec support for
+	  SoC audio on Ambarella Board. Generally, it's for HDMI.
+
+endif
+
